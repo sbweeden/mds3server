@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mds3server
+  labels:
+    app: mds3server
+spec:
+  containers:
+  - name: mds3server
+    image: us.icr.io/sweeden/mds3server:amd64
+    imagePullPolicy: Always
+    ports:
+      - containerPort: 3000
+    envFrom:
+    - secretRef:
+        name: mds3server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mds3server
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: mds3server
+      protocol: TCP
+  selector:
+    app: mds3server
