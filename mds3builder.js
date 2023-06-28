@@ -56,9 +56,12 @@ function buildJWT(docs) {
         let tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
+        // something to use as the version number of the MDS doc
+        let fullDaysSinceEpoch = Math.floor(now/8.64e7);
+
         let jwtClaims = {
             legalHeader: "Please be legal",
-            no: 1,
+            no: fullDaysSinceEpoch,
             nextUpdate: tomorrow.toISOString().split('T')[0],
             "entries": []
         };
