@@ -1,5 +1,5 @@
 # mds3server
-Simple example of a FIDO MDS3 server that exposes local MDS documents using the MDS3 server format
+Simple example of a FIDO MDS3 server that proxies and filteres entries from the FIDO MDS then augments the list from local MDS document files
 
 
 ## How I created the self-signed key and certificate
