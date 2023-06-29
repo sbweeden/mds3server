@@ -2,6 +2,7 @@
 const fs = require('fs');
 const jsrsasign = require('jsrsasign');
 const logger = require('./logging.js');
+const mds3proxy = require('./mds3proxy.js');
 
 function processFileOrDirectory(docs, fod) {
     //logger.logWithTS("Processing fod: " + fod);
@@ -44,6 +45,19 @@ function processFileOrDirectory(docs, fod) {
     });
 }
 
+function buildRejectTraceStr(mds) {
+    // seems as good a way as any
+    let result = mds.protocolFamily;
+    if (mds.protocolFamily == "fido2") {
+        result += "-" + mds.aagiud;
+    } else if (mds.protocolFamily == "uaf") {
+        result += "-" + mds.aaid;        
+    }
+    result += "-" + mds.description;
+    return result;
+}
+
+
 function buildJWT(docs) {
     let result = "Unknown error";
     try {
@@ -65,9 +79,59 @@ function buildJWT(docs) {
             nextUpdate: tomorrow.toISOString().split('T')[0],
             "entries": []
         };
+
+        let alreadyIncludedAAGUIDs = [];
+        let alreadyIncludedAKIs = [];
+
+        // if there are any cached entries from FIDO MDS, add them, subject to filtering and de-duplication
+        let cachedEntries = mds3proxy.getCachedEntries();
+        if (cachedEntries != null) {
+            logger.logWithTS("Processing: " + cachedEntries.length + " mds3proxy cached entries for possible JWT inclusion");
+            cachedEntries.forEach((e) => {
+                if (!filterDoc(e.metadataStatement)) {
+                    let alreadyIncluded = false;
+                    if (e.metadataStatement.protocolFamily == "fido2") {
+                        alreadyIncluded = (alreadyIncludedAAGUIDs.indexOf(e.metadataStatement.aaguid) >= 0);
+                        if (!alreadyIncluded) {
+                            alreadyIncludedAAGUIDs.push(e.metadataStatement.aaguid);
+                        }
+                    } else if (e.metadataStatement.protocolFamily == "u2f") {
+                        // shouldn't be necessary but because of an issue with an MDS entry I saw once...
+                        let uniqueAKIs = e.metadataStatement.attestationCertificateKeyIdentifiers.filter(
+                            (value, index, array) => {
+                                return array.indexOf(value) === index;
+                            }
+                        );
+
+                        uniqueAKIs.forEach((aki) => {
+                            if (!alreadyIncluded) {
+                                alreadyIncluded = (alreadyIncludedAKIs.indexOf(aki) >= 0);
+                                if (!alreadyIncluded) {
+                                    alreadyIncludedAKIs.push(aki);
+                                }
+                            }
+                        });
+                    }
+                    if (!alreadyIncluded) {
+                        jwtClaims.entries.push(e);
+                    } else {
+                        logger.logWithTS("Filtering our entry because detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                    }
+                } else {
+                    logger.logWithTS("Filtering out mds cache entry: " + buildRejectTraceStr(e.metadataStatement));
+                }
+            });
+        } else {
+            logger.logWithTS("No mds3proxy cached entries to add to JWT output");
+        }
+
+
+        // now do the same for any static files we have, subject to them not already having 
+        // an entry from FIDO MDS for that aaguid or akis, and subject to de-duplication
         docs.forEach((d) => {
             // builds an mdsentry from a plain metadata document with empty statusReports
             try {
+                let alreadyExists = false;
                 let mdsEntry = {
                     metadataStatement: d.contents,
                     statusReports: [],
@@ -80,9 +144,35 @@ function buildJWT(docs) {
                 } else {
                     throw ("Unrecognized protocol family: " + d.contents.protocolFamily);
                 }
-                jwtClaims.entries.push(mdsEntry);
+
+                let alreadyIncluded = false;
+                if (mdsEntry.metadataStatement.protocolFamily == "fido2") {
+                    alreadyIncluded = (alreadyIncludedAAGUIDs.indexOf(mdsEntry.metadataStatement.aaguid) >= 0);
+                    if (!alreadyIncluded) {
+                        alreadyIncludedAAGUIDs.push(mdsEntry.metadataStatement.aaguid);
+                    }
+                } else if (mdsEntry.metadataStatement.protocolFamily == "u2f") {
+                    let uniqueAKIs = mdsEntry.metadataStatement.attestationCertificateKeyIdentifiers.filter(
+                        (value, index, array) => {
+                            return array.indexOf(value) === index;
+                        }
+                    );
+                    uniqueAKIs.forEach((aki) => {
+                        if (!alreadyIncluded) {
+                            alreadyIncluded = (alreadyIncludedAKIs.indexOf(aki) >= 0);
+                            if (!alreadyIncluded) {
+                                alreadyIncludedAKIs.push(aki);
+                            }
+                        }
+                    });
+                }
+                if (!alreadyIncluded) {
+                    jwtClaims.entries.push(mdsEntry);
+                } else {
+                    logger.logWithTS("Filtering out file entry because detected duplicate aaguid or aki: " + d.filename);
+                }
             } catch (e) {
-                logger.logWithTS("Skipping entry for filename: " + d.filename + " because unable to build mds entry");
+                logger.logWithTS("Skipping entry for filename: " + d.filename + " because unable to build mds entry with error: " + e);
             }
         });
 

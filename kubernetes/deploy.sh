@@ -12,6 +12,8 @@ LOCAL_SSL_PORT=9443
 MDSSIGNER_KEY=mds3server.key.pem
 MDSSIGNER_CRT=mds3server.crt.pem
 METADATA_DIR=./metadata
+MDSPROXY_REFRESH_INTERVAL=3600000
+MDSPROXY_JWT_SIGNER=fido_mds_production_jws_signer.pem
 
 # Allow override of above variables from a local .env file (which is in .gitignore)
 # Basically you can create a .env file with those variables above defined in it with your
@@ -37,7 +39,9 @@ kubectl create secret generic $PODNAME \
   --from-literal=LOCAL_SSL_PORT=$LOCAL_SSL_PORT \
   --from-literal=MDSSIGNER_KEY=$MDSSIGNER_KEY \
   --from-literal=MDSSIGNER_CRT=$MDSSIGNER_CRT \
-  --from-literal=METADATA_DIR=$METADATA_DIR
+  --from-literal=METADATA_DIR=$METADATA_DIR \
+  --from-literal=MDSPROXY_REFRESH_INTERVAL=$MDSPROXY_REFRESH_INTERVAL \
+  --from-literal=MDSPROXY_JWT_SIGNER=$MDSPROXY_JWT_SIGNER
 
 POD=$(kubectl get pod -o json | jq -r ".items[] | select(.metadata.labels.app==\"$PODNAME\") | .metadata.name")
 
