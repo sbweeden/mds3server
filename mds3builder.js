@@ -102,6 +102,9 @@ function buildJWT(docs) {
                                 return array.indexOf(value) === index;
                             }
                         );
+                        if (uniqueAKIs.length != e.metadataStatement.attestationCertificateKeyIdentifiers.length) {
+                            logger.logWithTS("WARNING: Entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
+                        }
 
                         uniqueAKIs.forEach((aki) => {
                             if (!alreadyIncluded) {
