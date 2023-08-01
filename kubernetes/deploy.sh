@@ -3,7 +3,7 @@
 # Used to deploy verifypushcreds to kubernetes
 #
 
-PODNAME=mds3server
+DEPLOYNAME=mds3server
 
 # Modify the environment variables here
 PORT=3000
@@ -26,14 +26,14 @@ fi
 
 
 
-SNAME=$(kubectl get secrets -o "jsonpath={range .items[?(.metadata.name==\"$PODNAME\")]}{.metadata.name}{end}" 2>/dev/null)
+SNAME=$(kubectl get secrets -o "jsonpath={range .items[?(.metadata.name==\"$DEPLOYNAME\")]}{.metadata.name}{end}" 2>/dev/null)
 if [ ! -z "$SNAME" ]
 then
 	echo "Removing existing secret: $SNAME"
-	kubectl delete secret $SNAME
+	kubectl delete secret "$SNAME"
 fi
 
-kubectl create secret generic $PODNAME \
+kubectl create secret generic $DEPLOYNAME \
   --from-literal=PORT=$PORT \
   --from-literal=LOCAL_SSL_SERVER=$LOCAL_SSL_SERVER \
   --from-literal=LOCAL_SSL_PORT=$LOCAL_SSL_PORT \
@@ -43,19 +43,19 @@ kubectl create secret generic $PODNAME \
   --from-literal=MDSPROXY_REFRESH_INTERVAL=$MDSPROXY_REFRESH_INTERVAL \
   --from-literal=MDSPROXY_JWT_SIGNER=$MDSPROXY_JWT_SIGNER
 
-POD=$(kubectl get pod -o json | jq -r ".items[] | select(.metadata.labels.app==\"$PODNAME\") | .metadata.name")
 
-if [ ! -z "$POD" ]
+DEPLOYMENT=$(kubectl get deployment -o json | jq -r ".items[] | select(.metadata.labels.app==\"$DEPLOYNAME\") | .metadata.name")
+if [ ! -z "$DEPLOYMENT" ]
 then 
-  echo "Deleting existing pod: $PODNAME"
-  kubectl delete pod $PODNAME
+  echo "Deleting deployment: $DEPLOYMENT"
+  kubectl delete deployment "$DEPLOYMENT"
 fi
 
-PODSVC=$(kubectl get svc -o json | jq -r ".items[] | select(.metadata.name==\"$PODNAME\") | .metadata.name")
-if [ ! -z "$PODSVC" ]
+SVC=$(kubectl get svc -o json | jq -r ".items[] | select(.metadata.name==\"$DEPLOYNAME\") | .metadata.name")
+if [ ! -z "$SVC" ]
 then 
-  echo "Deleting existing service: $PODSVC"
-  kubectl delete service $PODSVC
+  echo "Deleting existing service: $SVC"
+  kubectl delete service "$SVC"
 fi
 
-kubectl create -f "$PODNAME.yaml"
+kubectl create -f "$DEPLOYNAME.yaml"

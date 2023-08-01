@@ -3,27 +3,27 @@
 # Used to cleanup kubernetes artifacts for the mds3server
 #
 
-PODNAME=mds3server
+DEPLOYNAME=mds3server
 
-SNAME=$(kubectl get secrets -o "jsonpath={range .items[?(.metadata.name==\"$PODNAME\")]}{.metadata.name}{end}" 2>/dev/null)
+SNAME=$(kubectl get secrets -o "jsonpath={range .items[?(.metadata.name==\"$DEPLOYNAME\")]}{.metadata.name}{end}" 2>/dev/null)
 if [ ! -z "$SNAME" ]
 then
 	echo "Removing secret: $SNAME"
-	kubectl delete secret $SNAME
+	kubectl delete secret "$SNAME"
 fi
 
-POD=$(kubectl get pod -o json | jq -r ".items[] | select(.metadata.labels.app==\"$PODNAME\") | .metadata.name")
-if [ ! -z "$POD" ]
+DEPLOYMENT=$(kubectl get deployment -o json | jq -r ".items[] | select(.metadata.labels.app==\"$DEPLOYNAME\") | .metadata.name")
+if [ ! -z "$DEPLOYMENT" ]
 then 
-  echo "Deleting pod: $PODNAME"
-  kubectl delete pod $PODNAME
+  echo "Deleting deployment: $DEPLOYMENT"
+  kubectl delete deployment "$DEPLOYMENT"
 fi
 
-PODSVC=$(kubectl get svc -o json | jq -r ".items[] | select(.metadata.name==\"$PODNAME\") | .metadata.name")
-if [ ! -z "$PODSVC" ]
+SVC=$(kubectl get svc -o json | jq -r ".items[] | select(.metadata.name==\"$DEPLOYNAME\") | .metadata.name")
+if [ ! -z "$SVC" ]
 then 
-  echo "Deleting service: $PODSVC"
-  kubectl delete service $PODSVC
+  echo "Deleting service: $SVC"
+  kubectl delete service "$SVC"
 fi
 
 

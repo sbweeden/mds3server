@@ -1,24 +1,38 @@
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: mds3server
   labels:
     app: mds3server
 spec:
-  containers:
-  - name: mds3server
-    image: us.icr.io/sweeden/mds3server:amd64
-    imagePullPolicy: Always
-    ports:
-      - containerPort: 3000
-    envFrom:
-    - secretRef:
-        name: mds3server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mds3server
+  template: 
+    metadata:
+      name: mds3server-deployment
+      labels:
+        app: mds3server
+    spec:
+#      imagePullSecrets:
+#        - name: ibmcr
+      containers:
+        - name: mds3server
+          image: us.icr.io/sweeden/mds3server:amd64
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          envFrom:
+          - secretRef:
+              name: mds3server
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: mds3server
+  labels:
+    app: mds3server
 spec:
   ports:
     - port: 3000
