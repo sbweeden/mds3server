@@ -66,7 +66,7 @@ function validateAndProcessMDS(mdstxt) {
             // deep copy
             _cachedEntries = JSON.parse(JSON.stringify(payloadObj.entries));
         } else {
-            logger.logWithTS("MDS already cached");
+            logger.logWithTS("MDS already cached - version no: " + _cachedMDSVersion);
         }
     } else {
         logger.logWithTS("unable to validate JWT signature, ignoring MDS");
