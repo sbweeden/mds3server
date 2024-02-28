@@ -7,6 +7,7 @@ const https = require('https');
 const fs = require('fs');
 const app = express();
 const mds3proxy = require('./mds3proxy.js');
+const passkeyproviders = require('./passkeyproviders.js');
 const mds3builder = require('./mds3builder.js');
 
 // set to ignore ssl cert errors when making requests
@@ -43,6 +44,7 @@ app.get('/mds', (req, rsp) => {
 
 // some one-time startup
 mds3proxy.proxyMDS();
+passkeyproviders.buildEntries();
 
 // listen for requests
 if (process.env.LOCAL_SSL_SERVER == "true") {

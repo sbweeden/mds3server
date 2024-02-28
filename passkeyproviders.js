@@ -1,23 +1,10 @@
-// mds3proxy
-const fs = require('fs');
-const crypto = require('crypto');
-const jsrsasign = require('jsrsasign');
+// passkeyproviders - builds skeleton MDS "entries" array documents from a list of passkey provider basic UX info found at
+// https://github.com/passkeydeveloper/passkey-authenticator-aaguids/blob/main/aaguid.json
+// asssumes all these providers only support "none" attestation since otherwise they should really be in the MDS
+
 const logger = require('./logging.js');
 
-var _cachedMDSVersion = 0;
-var _cachedEntries = [];
-
-function x5cToPEM(b64cert) {
-    let result = "-----BEGIN CERTIFICATE-----\n";
-    for (; b64cert.length > 64; b64cert = b64cert.slice(64)) {
-        result += b64cert.slice(0, 64) + "\n";
-    }
-    if (b64cert.length > 0) {
-        result += b64cert + "\n";
-    }
-    result += "-----END CERTIFICATE-----\n";
-    return result;
-}
+var _cachedPPEntries = [];
 
 function validateAndProcessMDS(mdstxt) {
 
@@ -69,36 +56,52 @@ function validateAndProcessMDS(mdstxt) {
     }
 }
 
-function proxyMDS() {
-    // this is async - just kicks off periodic MDS refresh to cache
-    logger.logWithTS("Fetching MDS from FIDO");
+function buildEntries() {
+    // this is async - just kicks off periodic get, build, and refresh to cache
+    logger.logWithTS("Fetching Passkey Provider info from github");
 	fetch( 
-		'https://mds.fidoalliance.org/', 
+		'https://raw.githubusercontent.com/passkeydeveloper/passkey-authenticator-aaguids/main/aaguid.json',
 		{
 			method: 'GET'
 		}
 	).then((response) => {
-		// work on text output
-        return response.text();
-    }).then((txt) => {
-        // validate and process the MDS blob
-        validateAndProcessMDS(txt);
+		// work on JSON output
+        return response.json();
+    }).then((data) => {
+        let newCachedEntries = [];
+        // there should be better representation of "required" fields (see https://fidoalliance.org/specs/mds/fido-metadata-statement-v3.0-ps-20210518.html#metadata-keys)
+        // depending on what your MDS client really needs however these are the minimum required fields for IBM Security Verify Access
+        Object.keys(data).forEach((k) => {
+            newCachedEntries.push({
+                aaguid: k,
+                metadataStatement: {
+                    aaguid: k,
+                    description: data[k].name,
+                    schema: 3,
+                    protocolFamily: "fido2",
+                    attestationRootCertificates: [],
+                    attestationTypes: [ "none" ],
+                    icon: data[k].icon_light
+                }
+            });
+        });
+        _cachedPPEntries = newCachedEntries;
     }).then(() => {
         // do it all again soon
-        setTimeout(proxyMDS, process.env.MDSPROXY_REFRESH_INTERVAL);
+        setTimeout(buildEntries, process.env.MDSPROXY_REFRESH_INTERVAL);
     }).catch((error) => {
 		console.log("proxyMDS error: " + error);
         // try it again soon
-        setTimeout(proxyMDS, process.env.MDSPROXY_REFRESH_INTERVAL);
+        setTimeout(buildEntries, process.env.MDSPROXY_REFRESH_INTERVAL);
 	});
 }
 
 function getCachedEntries() {
-    return _cachedEntries;
+    return _cachedPPEntries;
 }
 
 
 module.exports = { 
     getCachedEntries: getCachedEntries,
-    proxyMDS: proxyMDS
+    buildEntries: buildEntries
 };

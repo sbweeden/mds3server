@@ -3,6 +3,7 @@ const fs = require('fs');
 const jsrsasign = require('jsrsasign');
 const logger = require('./logging.js');
 const mds3proxy = require('./mds3proxy.js');
+const passkeyproviders = require('./passkeyproviders.js');
 
 function processFileOrDirectory(docs, fod) {
     //logger.logWithTS("Processing fod: " + fod);
@@ -84,10 +85,10 @@ function buildJWT(docs) {
         let alreadyIncludedAKIs = [];
 
         // if there are any cached entries from FIDO MDS, add them, subject to filtering and de-duplication
-        let cachedEntries = mds3proxy.getCachedEntries();
-        if (cachedEntries != null) {
-            logger.logWithTS("Processing: " + cachedEntries.length + " mds3proxy cached entries for possible JWT inclusion");
-            cachedEntries.forEach((e) => {
+        let mdsCachedEntries = mds3proxy.getCachedEntries();
+        if (mdsCachedEntries != null) {
+            logger.logWithTS("Processing: " + mdsCachedEntries.length + " mds3proxy cached entries for possible JWT inclusion");
+            mdsCachedEntries.forEach((e) => {
                 if (!filterDoc(e.metadataStatement)) {
                     let alreadyIncluded = false;
                     if (e.metadataStatement.protocolFamily == "fido2") {
@@ -118,7 +119,7 @@ function buildJWT(docs) {
                     if (!alreadyIncluded) {
                         jwtClaims.entries.push(e);
                     } else {
-                        logger.logWithTS("Filtering our entry because detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                        logger.logWithTS("Filtering out entry because detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
                     }
                 } else {
                     logger.logWithTS("Filtering out mds cache entry: " + buildRejectTraceStr(e.metadataStatement));
@@ -127,7 +128,6 @@ function buildJWT(docs) {
         } else {
             logger.logWithTS("No mds3proxy cached entries to add to JWT output");
         }
-
 
         // now do the same for any static files we have, subject to them not already having 
         // an entry from FIDO MDS for that aaguid or akis, and subject to de-duplication
@@ -178,6 +178,57 @@ function buildJWT(docs) {
                 logger.logWithTS("Skipping entry for filename: " + d.filename + " because unable to build mds entry with error: " + e);
             }
         });
+
+        // now do the same for any auto-generated entries from the passkey provider github repo,
+        // filtering out any entries we find that are already populated via MDS or files above (i.e. MDS and files take precendence)
+        let ppCachedEntries = passkeyproviders.getCachedEntries();
+        if (ppCachedEntries != null) {
+            logger.logWithTS("Processing: " + ppCachedEntries.length + " passkey provider cached entries for possible JWT inclusion");
+            ppCachedEntries.forEach((e) => {
+                if (!filterDoc(e.metadataStatement)) {
+                    let alreadyIncluded = false;
+                    let skipEntry = false;
+                    if (e.metadataStatement.protocolFamily == "fido2") {
+                        alreadyIncluded = (alreadyIncludedAAGUIDs.indexOf(e.metadataStatement.aaguid) >= 0);
+                        if (!alreadyIncluded) {
+                            alreadyIncludedAAGUIDs.push(e.metadataStatement.aaguid);
+                        }
+                    } else if (e.metadataStatement.protocolFamily == "u2f") {
+                        // shouldn't be necessary but because of an issue with an MDS entry I saw once...
+                        let uniqueAKIs = e.metadataStatement.attestationCertificateKeyIdentifiers.filter(
+                            (value, index, array) => {
+                                return array.indexOf(value) === index;
+                            }
+                        );
+                        if (uniqueAKIs.length != e.metadataStatement.attestationCertificateKeyIdentifiers.length) {
+                            logger.logWithTS("WARNING: Entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
+                        }
+
+                        uniqueAKIs.forEach((aki) => {
+                            if (!alreadyIncluded) {
+                                alreadyIncluded = (alreadyIncludedAKIs.indexOf(aki) >= 0);
+                                if (!alreadyIncluded) {
+                                    alreadyIncludedAKIs.push(aki);
+                                }
+                            }
+                        });
+                    } else {
+                        logger.logWithTS("Filtering out passkey provider entry because of unrecognised protocolFamily: " + buildRejectTraceStr(e.metadataStatement));
+                        skipEntry = true;
+                    }
+
+                    if (!alreadyIncluded && !skipEntry) {
+                        jwtClaims.entries.push(e);
+                    } else {
+                        logger.logWithTS("Filtering out entry because either invalid document or detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                    }
+                } else {
+                    logger.logWithTS("Filtering out passkey provider cache entry: " + buildRejectTraceStr(e));
+                }
+            });
+        } else {
+            logger.logWithTS("No mds3proxy cached entries to add to JWT output");
+        }        
 
         let prvKey = jsrsasign.KEYUTIL.getKeyFromPlainPrivatePKCS8PEM(fs.readFileSync('./'+process.env.MDSSIGNER_KEY).toString());
 
