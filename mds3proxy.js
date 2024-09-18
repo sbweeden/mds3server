@@ -4,8 +4,16 @@ const crypto = require('crypto');
 const jsrsasign = require('jsrsasign');
 const logger = require('./logging.js');
 
-var _cachedMDSVersion = 0;
-var _cachedEntries = [];
+// each key in this cache is of the format:
+// {
+//    "https url of the mds server we are proxying": {
+//        "cachedMDSVersion": integer value
+//        "entries": [ array of blob entries ]
+//    }
+// }
+//
+//
+var _cachedServers = {};
 
 function x5cToPEM(b64cert) {
     let result = "-----BEGIN CERTIFICATE-----\n";
@@ -19,7 +27,15 @@ function x5cToPEM(b64cert) {
     return result;
 }
 
-function validateAndProcessMDS(mdstxt) {
+function validateAndProcessMDS(mdsServerConfig, mdstxt) {
+
+    // establish _cachedServers entry if not already present
+    if (_cachedServers[mdsServerConfig.url] == null) {
+        _cachedServers[mdsServerConfig.url] = {
+            cachedMDSVersion: 0,
+            entries: []
+        };
+    }
 
     let isValidJWTSignature = false;
     try {
@@ -36,7 +52,7 @@ function validateAndProcessMDS(mdstxt) {
 
             // then last in chain against the CA
             let cert = new crypto.X509Certificate(new Uint8Array(jsrsasign.b64toBA(headerObj.x5c[headerObj.x5c.length-1])));
-            let ca = new crypto.X509Certificate(fs.readFileSync('./'+process.env.MDSPROXY_JWT_SIGNER).toString());
+            let ca = new crypto.X509Certificate(fs.readFileSync('./'+mdsServerConfig.signerPEMFile).toString());
             if (!cert.verify(ca.publicKey)) {
                 throw ("last element of JWT x5c not signed by JWS root CA");
             }
@@ -56,24 +72,24 @@ function validateAndProcessMDS(mdstxt) {
         logger.logWithTS("MDS JWT signature valid");
         let payloadObj = jsrsasign.KJUR.jws.JWS.readSafeJSONString(jsrsasign.b64utoutf8(mdstxt.split(".")[1]));
 
-        if (_cachedMDSVersion != payloadObj.no) {
-            _cachedMDSVersion = payloadObj.no;
-            logger.logWithTS("caching new MDS version: " + _cachedMDSVersion);
+        if (_cachedServers[mdsServerConfig.url].cachedMDSVersion != payloadObj.no) {
+            _cachedServers[mdsServerConfig.url].cachedMDSVersion = payloadObj.no;
+            logger.logWithTS("caching new MDS version: " + payloadObj.no);
             // deep copy
-            _cachedEntries = JSON.parse(JSON.stringify(payloadObj.entries));
+            _cachedServers[mdsServerConfig.url].entries = JSON.parse(JSON.stringify(payloadObj.entries));
         } else {
-            logger.logWithTS("MDS already cached - version no: " + _cachedMDSVersion);
+            logger.logWithTS("MDS already cached - version no: " + payloadObj.no);
         }
     } else {
         logger.logWithTS("unable to validate JWT signature, ignoring MDS");
     }
 }
 
-function proxyMDS() {
+function proxyMDS(mdsServerConfig) {
     // this is async - just kicks off periodic MDS refresh to cache
-    logger.logWithTS("Fetching MDS from FIDO");
+    logger.logWithTS("Fetching MDS from: " + mdsServerConfig.url);
 	fetch( 
-		'https://mds.fidoalliance.org/', 
+		mdsServerConfig.url, 
 		{
 			method: 'GET'
 		}
@@ -82,23 +98,30 @@ function proxyMDS() {
         return response.text();
     }).then((txt) => {
         // validate and process the MDS blob
-        validateAndProcessMDS(txt);
+        validateAndProcessMDS(mdsServerConfig, txt);
     }).then(() => {
         // do it all again soon
-        setTimeout(proxyMDS, process.env.MDSPROXY_REFRESH_INTERVAL);
+        setTimeout(() => proxyMDS(mdsServerConfig), process.env.MDSPROXY_REFRESH_INTERVAL);
     }).catch((error) => {
 		console.log("proxyMDS error: " + error);
         // try it again soon
-        setTimeout(proxyMDS, process.env.MDSPROXY_REFRESH_INTERVAL);
+        setTimeout(() => proxyMDS(mdsServerConfig), process.env.MDSPROXY_REFRESH_INTERVAL);
 	});
 }
 
-function getCachedEntries() {
-    return _cachedEntries;
+function proxyMDSServers() {
+    let mdsServersConfig = JSON.parse(process.env.MDSPROXY_MDS_SERVERS);
+    mdsServersConfig.forEach((mdsServerConfig) => {
+        proxyMDS(mdsServerConfig);
+    })
+}
+
+function getCachedServers() {
+    return _cachedServers;
 }
 
 
 module.exports = { 
-    getCachedEntries: getCachedEntries,
-    proxyMDS: proxyMDS
+    getCachedServers: getCachedServers,
+    proxyMDSServers: proxyMDSServers
 };

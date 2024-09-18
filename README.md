@@ -1,5 +1,5 @@
 # mds3server
-Simple example of a FIDO MDS3 server that proxies and filteres entries from the FIDO MDS then augments the list from local MDS document files
+Simple example of a FIDO MDS3 server that proxies and filteres entries from the other MDS servers then augments the list from local MDS document files and passkey providers registered on passkeys.dev.
 
 
 ## How I created the self-signed key and certificate

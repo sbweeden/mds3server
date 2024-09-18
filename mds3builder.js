@@ -4,6 +4,7 @@ const jsrsasign = require('jsrsasign');
 const logger = require('./logging.js');
 const mds3proxy = require('./mds3proxy.js');
 const passkeyproviders = require('./passkeyproviders.js');
+const confighelper = require('./confighelper.js');
 
 function processFileOrDirectory(docs, fod) {
     //logger.logWithTS("Processing fod: " + fod);
@@ -84,50 +85,57 @@ function buildJWT(docs) {
         let alreadyIncludedAAGUIDs = [];
         let alreadyIncludedAKIs = [];
 
-        // if there are any cached entries from FIDO MDS, add them, subject to filtering and de-duplication
-        let mdsCachedEntries = mds3proxy.getCachedEntries();
-        if (mdsCachedEntries != null) {
-            logger.logWithTS("Processing: " + mdsCachedEntries.length + " mds3proxy cached entries for possible JWT inclusion");
-            mdsCachedEntries.forEach((e) => {
-                if (!filterDoc(e.metadataStatement)) {
-                    let alreadyIncluded = false;
-                    if (e.metadataStatement.protocolFamily == "fido2") {
-                        alreadyIncluded = (alreadyIncludedAAGUIDs.indexOf(e.metadataStatement.aaguid) >= 0);
-                        if (!alreadyIncluded) {
-                            alreadyIncludedAAGUIDs.push(e.metadataStatement.aaguid);
-                        }
-                    } else if (e.metadataStatement.protocolFamily == "u2f") {
-                        // shouldn't be necessary but because of an issue with an MDS entry I saw once...
-                        let uniqueAKIs = e.metadataStatement.attestationCertificateKeyIdentifiers.filter(
-                            (value, index, array) => {
-                                return array.indexOf(value) === index;
-                            }
-                        );
-                        if (uniqueAKIs.length != e.metadataStatement.attestationCertificateKeyIdentifiers.length) {
-                            logger.logWithTS("WARNING: Entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
-                        }
-
-                        uniqueAKIs.forEach((aki) => {
+        // if there are any cached entries from MDS servers, add them, subject to filtering and de-duplication
+        let mdsCachedServers = mds3proxy.getCachedServers();
+        Object.keys(mdsCachedServers).forEach((mdsCachedServerURL) => {
+            let mdsCachedEntries = mdsCachedServers[mdsCachedServerURL].entries;
+            if (mdsCachedEntries != null && mdsCachedEntries.length > 0) {
+                logger.logWithTS("Processing: " + mdsCachedEntries.length + " from MDS server (" + mdsCachedServerURL + ") cached entries for possible JWT inclusion");
+                let numberIncluded = 0;
+                mdsCachedEntries.forEach((e) => {
+                    if (!filterDoc(e.metadataStatement)) {
+                        let alreadyIncluded = false;
+                        if (e.metadataStatement.protocolFamily == "fido2") {
+                            alreadyIncluded = (alreadyIncludedAAGUIDs.indexOf(e.metadataStatement.aaguid) >= 0);
                             if (!alreadyIncluded) {
-                                alreadyIncluded = (alreadyIncludedAKIs.indexOf(aki) >= 0);
-                                if (!alreadyIncluded) {
-                                    alreadyIncludedAKIs.push(aki);
-                                }
+                                alreadyIncludedAAGUIDs.push(e.metadataStatement.aaguid);
                             }
-                        });
-                    }
-                    if (!alreadyIncluded) {
-                        jwtClaims.entries.push(e);
+                        } else if (e.metadataStatement.protocolFamily == "u2f") {
+                            // shouldn't be necessary but because of an issue with an MDS entry I saw once...
+                            let uniqueAKIs = e.metadataStatement.attestationCertificateKeyIdentifiers.filter(
+                                (value, index, array) => {
+                                    return array.indexOf(value) === index;
+                                }
+                            );
+                            if (uniqueAKIs.length != e.metadataStatement.attestationCertificateKeyIdentifiers.length) {
+                                logger.logWithTS("WARNING: MDS server (" + mdsCachedServerURL + ") entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
+                            }
+
+                            uniqueAKIs.forEach((aki) => {
+                                if (!alreadyIncluded) {
+                                    alreadyIncluded = (alreadyIncludedAKIs.indexOf(aki) >= 0);
+                                    if (!alreadyIncluded) {
+                                        alreadyIncludedAKIs.push(aki);
+                                    }
+                                }
+                            });
+                        }
+                        if (!alreadyIncluded) {
+                            jwtClaims.entries.push(cleanStatusReports(e));
+                            numberIncluded++;
+                        } else {
+                            logger.logWithTS("Filtering out entry from MDS server (" + mdsCachedServerURL + ") because detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                        }
                     } else {
-                        logger.logWithTS("Filtering out entry because detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                        logger.logWithTS("Filtering out entry from MDS server (" + mdsCachedServerURL + "): " + buildRejectTraceStr(e.metadataStatement));
                     }
-                } else {
-                    logger.logWithTS("Filtering out mds cache entry: " + buildRejectTraceStr(e.metadataStatement));
-                }
-            });
-        } else {
-            logger.logWithTS("No mds3proxy cached entries to add to JWT output");
-        }
+                });
+                logger.logWithTS("Processing included: " + numberIncluded + " entries from MDS server (" + mdsCachedServerURL + ")");
+
+            } else {
+                logger.logWithTS("No mds3proxy cached entries from MDS server (" + mdsCachedServerURL + ") to add to JWT output");
+            }
+        });
 
         // now do the same for any static files we have, subject to them not already having 
         // an entry from FIDO MDS for that aaguid or akis, and subject to de-duplication
@@ -201,7 +209,7 @@ function buildJWT(docs) {
                             }
                         );
                         if (uniqueAKIs.length != e.metadataStatement.attestationCertificateKeyIdentifiers.length) {
-                            logger.logWithTS("WARNING: Entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
+                            logger.logWithTS("WARNING: Passkey provider entry had duplicate akis that were de-duplicated: " + buildRejectTraceStr(e.metadataStatement));
                         }
 
                         uniqueAKIs.forEach((aki) => {
@@ -220,7 +228,7 @@ function buildJWT(docs) {
                     if (!alreadyIncluded && !skipEntry) {
                         jwtClaims.entries.push(e);
                     } else {
-                        logger.logWithTS("Filtering out entry because either invalid document or detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
+                        logger.logWithTS("Filtering out passkey provider entry because either invalid document or detected duplicate aaguid or aki: " + buildRejectTraceStr(e.metadataStatement));
                     }
                 } else {
                     logger.logWithTS("Filtering out passkey provider cache entry: " + buildRejectTraceStr(e));
@@ -255,6 +263,7 @@ function filterDoc(mds) {
             try {
                 mds.attestationCertificateKeyIdentifiers.forEach((aki) => {
                     if (aki.length != 40) {
+                        console.log("WARNING: Invalid length value found in attestationCertificateKeyIdentifiers entry found for mds document: " + buildRejectTraceStr(mds));
                         result = true;
                     }
                 });
@@ -276,6 +285,22 @@ function buildMDS3JWT(dir) {
         .catch((e) => {
             return null;
         })
+}
+
+//
+// Temporary hack to remove unrecognised MDS 3.1 fields from all statusreports for an MDS entry
+//
+function cleanStatusReports(e) {
+    let result = e;
+    if (confighelper.getAdvancedConfiguration("removeStatusReportsFIPSFields")) {
+        if (result.statusReports != null && result.statusReports.length > 0) {
+            result.statusReports.forEach((sr) => {
+                delete sr.fipsRevision;
+                delete sr.fipsPhysicalSecurityLevel;
+            });
+        }    
+    }
+    return result;
 }
 
 

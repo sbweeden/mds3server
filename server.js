@@ -43,7 +43,7 @@ app.get('/mds', (req, rsp) => {
 });
 
 // some one-time startup
-mds3proxy.proxyMDS();
+mds3proxy.proxyMDSServers();
 passkeyproviders.buildEntries();
 
 // listen for requests

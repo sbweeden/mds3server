@@ -13,7 +13,8 @@ MDSSIGNER_KEY=mds3server.key.pem
 MDSSIGNER_CRT=mds3server.crt.pem
 METADATA_DIR=./metadata
 MDSPROXY_REFRESH_INTERVAL=3600000
-MDSPROXY_JWT_SIGNER=fido_mds_production_jws_signer.pem
+MDSPROXY_MDS_SERVERS='[{"url": "https://mds.fidoalliance.org", "signerPEMFile": "fido_mds_production_jws_signer"}]'
+MDSPROXY_ADVANCED='{"removeStatusReportsFIPSFields": true}'
 
 # Allow override of above variables from a local .env file (which is in .gitignore)
 # Basically you can create a .env file with those variables above defined in it with your
@@ -33,15 +34,16 @@ then
 	kubectl delete secret "$SNAME"
 fi
 
-kubectl create secret generic $DEPLOYNAME \
-  --from-literal=PORT=$PORT \
-  --from-literal=LOCAL_SSL_SERVER=$LOCAL_SSL_SERVER \
-  --from-literal=LOCAL_SSL_PORT=$LOCAL_SSL_PORT \
-  --from-literal=MDSSIGNER_KEY=$MDSSIGNER_KEY \
-  --from-literal=MDSSIGNER_CRT=$MDSSIGNER_CRT \
-  --from-literal=METADATA_DIR=$METADATA_DIR \
-  --from-literal=MDSPROXY_REFRESH_INTERVAL=$MDSPROXY_REFRESH_INTERVAL \
-  --from-literal=MDSPROXY_JWT_SIGNER=$MDSPROXY_JWT_SIGNER
+kubectl create secret generic "$DEPLOYNAME" \
+  --from-literal=PORT="$PORT" \
+  --from-literal=LOCAL_SSL_SERVER="$LOCAL_SSL_SERVER" \
+  --from-literal=LOCAL_SSL_PORT="$LOCAL_SSL_PORT" \
+  --from-literal=MDSSIGNER_KEY="$MDSSIGNER_KEY" \
+  --from-literal=MDSSIGNER_CRT="$MDSSIGNER_CRT" \
+  --from-literal=METADATA_DIR="$METADATA_DIR" \
+  --from-literal=MDSPROXY_REFRESH_INTERVAL="$MDSPROXY_REFRESH_INTERVAL" \
+  --from-literal=MDSPROXY_MDS_SERVERS="$MDSPROXY_MDS_SERVERS" \
+  --from-literal=MDSPROXY_ADVANCED="$MDSPROXY_ADVANCED"
 
 
 DEPLOYMENT=$(kubectl get deployment -o json | jq -r ".items[] | select(.metadata.labels.app==\"$DEPLOYNAME\") | .metadata.name")
