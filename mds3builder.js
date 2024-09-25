@@ -51,7 +51,7 @@ function buildRejectTraceStr(mds) {
     // seems as good a way as any
     let result = mds.protocolFamily;
     if (mds.protocolFamily == "fido2") {
-        result += "-" + mds.aagiud;
+        result += "-" + mds.aaguid;
     } else if (mds.protocolFamily == "uaf") {
         result += "-" + mds.aaid;        
     }
