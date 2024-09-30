@@ -1,4 +1,4 @@
-FROM node:lts
+FROM registry.access.redhat.com/ubi9/nodejs-20-minimal
 
 # Create app directory
 WORKDIR /usr/src/app
