@@ -113,7 +113,7 @@ function proxyMDSServers() {
     let mdsServersConfig = JSON.parse(process.env.MDSPROXY_MDS_SERVERS);
     mdsServersConfig.forEach((mdsServerConfig) => {
         proxyMDS(mdsServerConfig);
-    })
+    });
 }
 
 function getCachedServers() {
