@@ -39,7 +39,11 @@ app.get('/mds', (req, rsp) => {
 		});
 		rsp.write(buf);
 		rsp.end();    	
-	})
+	});
+});
+
+app.get('/viewer', (req, rsp) => {
+	rsp.sendFile(__dirname + '/views/viewer.html');
 });
 
 // some one-time startup

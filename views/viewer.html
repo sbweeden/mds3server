@@ -1,0 +1,120 @@
+<html>
+    <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/8.0.20/jsrsasign-all-min.js"></script>
+        <script type="text/javascript">
+            var claimsObj = null;
+
+            function hideDiv(id) {
+                var mydiv = document.getElementById(id);
+                if (mydiv != null) {
+                    mydiv.style.display = "none";	
+                }
+                
+            }
+
+            function showDiv(id) {
+                var mydiv = document.getElementById(id);
+                if (mydiv != null) {
+                    mydiv.style.display = "block";	
+                }
+            }
+
+            function htmlEncode(value){
+			    if (value) {
+			    	return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+			    } else {
+			        return '';
+			    }
+			}
+
+            function compareMDSEntries(a, b) {
+                if (a.metadataStatement.protocolFamily == b.metadataStatement.protocolFamily) {
+                    let a_aaguid = (a["aaguid"] || "").toLowerCase();
+                    let b_aaguid = (b["aaguid"] || "").toLowerCase();
+                    if (a_aaguid == b_aaguid) {
+                        return (a.metadataStatement.description < b.metadataStatement.description ? -1 : 1);
+                    } else {
+                        return (a_aaguid < b_aaguid ? -1 : 1);    
+                    }
+                } else {
+                    return (a.metadataStatement.protocolFamily < b.metadataStatement.protocolFamily ? -1 : 1);
+                }
+            }
+
+
+            function processMDSEntry(e) {
+                const tBody = document.getElementById("mdsTable").getElementsByTagName('tbody')[0];
+                const newRow = tBody.insertRow();
+                const aaguidCell = newRow.insertCell();
+                const nameCell = newRow.insertCell();
+                const iconCell = newRow.insertCell();
+                const protocolCell = newRow.insertCell();
+                const dataCell = newRow.insertCell();
+                aaguidCell.innerText = (e["aaguid"] || "").toLowerCase();
+                nameCell.innerText = e["metadataStatement"]["description"] || "NO DESCRIPTION";
+                iconCell.innerHTML = (e["metadataStatement"]["icon"] ? ('<img style="max-width:100px;max-height:50px;" src="' + e["metadataStatement"]["icon"] + '" />') : "");
+                protocolCell.innerText = e["metadataStatement"]["protocolFamily"] || "";
+
+                const dataInput = document.createElement("input");
+                dataInput.setAttribute("type", "text");
+                dataInput.setAttribute("readonly", true);
+                dataInput.setAttribute("size", "40");
+                dataInput.setAttribute("value", JSON.stringify(e["metadataStatement"]));
+
+                dataCell.appendChild(dataInput);
+            }
+
+            // retrieves the MDS JWT blob served by this mdsserver, then displays all the entries
+            function onLoad() {
+                fetch(
+                        '/mds',
+                        {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        }
+                    ).then((response) => {
+                        if (!response.ok) {
+                            throw new Error("Unexpected HTTP response code: " + response.status);
+                        }
+                        return response.text();
+                    }).then((data) => {
+                        claimsObj = KJUR.jws.JWS.readSafeJSONString(b64utoutf8(data.split(".")[1]));
+                        document.getElementById('mpNo').innerText = ''+claimsObj.no;
+                        document.getElementById('mpNumEntries').innerText = ''+claimsObj.entries.length;
+                        
+                        claimsObj.entries.sort(compareMDSEntries).forEach(e => {
+                            processMDSEntry(e);
+                        });
+                        hideDiv("loadingDiv");
+                        showDiv("contentDiv");
+                    }).catch((error) => {
+                        console.log(error);
+                    });
+            }
+
+            window.addEventListener('load', onLoad);
+        </script>
+    </head>
+    <body>
+        <div id="loadingDiv" style="display:block">
+            One moment, loading mds...
+        </div>
+        <div id="contentDiv" style="display:none">
+            <h1>Metadata properties</h1>
+            <table id="mdsPropertiesTable" border="1">
+                <tr><td>No</td><td id="mpNo"></td></tr>
+                <tr><td>Number of Entries</td><td id="mpNumEntries"></td></tr>
+            </table>
+            <h1>Metadata entries</h1>
+            <table id="mdsTable" border="1">
+                <thead>
+                    <tr><th>AAGUID</th><th>Name</th><th>Icon</th><th>Protocol</th><th>Metadata</th></tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </body>
+</html>
