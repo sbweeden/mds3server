@@ -46,7 +46,7 @@ function validateAndProcessMDS(mdsServerConfig, mdstxt) {
                 let cert = new crypto.X509Certificate(new Uint8Array(jsrsasign.b64toBA(headerObj.x5c[i])));
                 let ca = new crypto.X509Certificate(new Uint8Array(jsrsasign.b64toBA(headerObj.x5c[i+1])));
                 if (!cert.verify(ca.publicKey)) {
-                    throw ("x5c at index: " + i + " could not be verified by certificate in x5c at index: " + (i+1));
+                    throw ("x5c at index: " + i + " could not be verified by certificate in x5c at index: " + (i+1) + " for MDS: " + mdsServerConfig.url);
                 }
             }
 
@@ -54,17 +54,26 @@ function validateAndProcessMDS(mdsServerConfig, mdstxt) {
             let cert = new crypto.X509Certificate(new Uint8Array(jsrsasign.b64toBA(headerObj.x5c[headerObj.x5c.length-1])));
             let ca = new crypto.X509Certificate(fs.readFileSync('./'+mdsServerConfig.signerPEMFile).toString());
             if (!cert.verify(ca.publicKey)) {
-                throw ("last element of JWT x5c not signed by JWS root CA");
+                throw ("last element of JWT x5c not signed by JWS root CA for MDS: " + mdsServerConfig.url);
             }
 
             // now verify the JWT is signed by headerObj.x5c[0]
             let pubkey = jsrsasign.KEYUTIL.getKey(x5cToPEM(headerObj.x5c[0]));
-            isValidJWTSignature = jsrsasign.KJUR.jws.JWS.verifyJWT(mdstxt, pubkey, {alg: ['RS256']});
+            const allowedAlgs = ['RS256', 'ES256'];
+            if (headerObj.alg == null || allowedAlgs.indexOf(headerObj.alg) == -1) {
+                throw (" alg: " + headerObj.alg + " is not allowed for MDS: " + mdsServerConfig.url);
+            }
+
+
+            isValidJWTSignature = jsrsasign.KJUR.jws.JWS.verifyJWT(mdstxt, pubkey, {alg: [headerObj.alg]});
+            if (!isValidJWTSignature) {
+                logger.logWithTS("The MDS JWT signature did not validate against headerObj.x5c[0] for MDS: " + mdsServerConfig.url);
+            }
         } else {
-            throw "x5c not found in JWT header";
+            throw ("x5c not found in JWT header for MDS: " + mdsServerConfig.url);
         }
     } catch (e) {
-        logger.logWithTS("Caught error verifying MDS JWT signature: " + e);
+        logger.logWithTS("Caught error verifying MDS JWT signature: " + e + " for MDS: " + mdsServerConfig.url);
         isValidJWTSignature = false;
     }
 
@@ -74,14 +83,14 @@ function validateAndProcessMDS(mdsServerConfig, mdstxt) {
 
         if (_cachedServers[mdsServerConfig.url].cachedMDSVersion != payloadObj.no) {
             _cachedServers[mdsServerConfig.url].cachedMDSVersion = payloadObj.no;
-            logger.logWithTS("caching new MDS version: " + payloadObj.no);
+            logger.logWithTS("caching new MDS version: " + payloadObj.no + " from: " + mdsServerConfig.url);
             // deep copy
             _cachedServers[mdsServerConfig.url].entries = JSON.parse(JSON.stringify(payloadObj.entries));
         } else {
             logger.logWithTS("MDS already cached - version no: " + payloadObj.no);
         }
     } else {
-        logger.logWithTS("unable to validate JWT signature, ignoring MDS");
+        logger.logWithTS("unable to validate JWT signature, ignoring MDS: " + mdsServerConfig.url);
     }
 }
 

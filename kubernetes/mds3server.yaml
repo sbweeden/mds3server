@@ -19,6 +19,7 @@ spec:
 #        - name: ibmcr
       containers:
         - name: mds3server
+#          image: us.icr.io/sweeden/mds3server:amd64_noself
           image: us.icr.io/sweeden/mds3server:amd64
           imagePullPolicy: Always
           ports:
