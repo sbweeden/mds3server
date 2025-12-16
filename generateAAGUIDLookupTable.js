@@ -16,6 +16,8 @@ let mdsServersConfig = JSON.parse(process.env.MDSPROXY_MDS_SERVERS);
 let allPromises = [];
 let aaguidLookupTable = {};
 
+let INCLUDE_ICON = false;
+
 function x5cToPEM(b64cert) {
     let result = "-----BEGIN CERTIFICATE-----\n";
     for (; b64cert.length > 64; b64cert = b64cert.slice(64)) {
@@ -80,6 +82,9 @@ function processMDS(mdsServerConfig) {
                     if (!(aaguid in aaguidLookupTable)) {
                         aaguidLookupTable[aaguid] = {};
                         aaguidLookupTable[aaguid]["name"] = description;
+                        if (INCLUDE_ICON && e.icon != null) {
+                            aaguidLookupTable[aaguid]["icon"] = e.icon;
+                        }
                     }
                 }
             });    
@@ -105,6 +110,10 @@ function processPasskeyDeveloper() {
             if (!(aaguid in aaguidLookupTable)) {
                 aaguidLookupTable[aaguid] = {};
                 aaguidLookupTable[aaguid]["name"] = description;
+
+                if (INCLUDE_ICON && data[k].icon_light != null) {
+                    aaguidLookupTable[aaguid]["icon"] = data[k].icon_light;
+                }
             }
         });
     });
