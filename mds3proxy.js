@@ -1,5 +1,6 @@
 // mds3proxy
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const jsrsasign = require('jsrsasign');
 const logger = require('./logging.js');
@@ -78,7 +79,7 @@ function validateAndProcessMDS(mdsServerConfig, mdstxt) {
     }
 
     if (isValidJWTSignature) {
-        logger.logWithTS("MDS JWT signature valid");
+        logger.logWithTS("MDS JWT signature valid for MDS server with URL: " + mdsServerConfig.url);
         let payloadObj = jsrsasign.KJUR.jws.JWS.readSafeJSONString(jsrsasign.b64utoutf8(mdstxt.split(".")[1]));
 
         if (_cachedServers[mdsServerConfig.url].cachedMDSVersion != payloadObj.no) {
@@ -103,8 +104,51 @@ function proxyMDS(mdsServerConfig) {
 			method: 'GET'
 		}
 	).then((response) => {
-		// work on text output
-        return response.text();
+        if (response.ok) {
+            // work on text output
+            let txtOutput = null;
+            return response.text()
+            .then((txt) => {
+                txtOutput = txt;
+                // if there is a cacheFile configured for this mds server, try writing the txt content to the cache file now
+                if (mdsServerConfig.cacheFile != null) {
+                    console.log("Writing MDS cache file: " + mdsServerConfig.cacheFile);
+                    return fs.promises.writeFile(mdsServerConfig.cacheFile, txt, { encoding: 'utf8' })
+                    .then(() => {
+                        console.log("Successfully wrote MDS cache file: " + mdsServerConfig.cacheFile);
+                    }).catch((e) => {
+                        console.error("Error writing MDS cache file: " + mdsServerConfig.cacheFile + " error: " + e);
+                    });
+                }
+            }).then(() => {
+                // saved, or at least attempted to, now return the txt to be processed
+                return txtOutput;
+            });
+        } else {
+            console.log("Unable to fetch MDS url: " + mdsServerConfig.url + " response status: " + response.status)
+            // see if we can open local file for this MDS text from a filename from mdsServerConifg.cacheFile 
+            let cacheFilename = mdsServerConfig.cacheFile;
+            if (cacheFilename != null) {
+                // try to read local file
+                console.log("Attempting to read MDS cache file: " + cacheFilename);
+                return fs.promises.stat(cacheFilename)
+                .then((stat) => {
+                    if (stat.isFile()) {
+                        return fs.promises.readFile(cacheFilename, { encoding: 'utf8' });
+                    } else {
+                        throw "Unable to read MDS cache file: " + cacheFilename;
+                    }
+                }).then((txt) => {
+                    console.log("Using contents of MDS cache file: " + cacheFilename);
+                    return txt;
+                }).catch((e) => {
+                    let errorStr = ("Error processing cache file: " + cacheFilename + " error: " + e);
+                    throw errorStr;
+                });
+            } else {
+                throw "Unable to fetch MDS from: " + mdsServerConfig.url + " and no cache file configured";
+            }
+        }
     }).then((txt) => {
         // validate and process the MDS blob
         validateAndProcessMDS(mdsServerConfig, txt);
