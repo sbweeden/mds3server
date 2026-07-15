@@ -131,3 +131,6 @@ dist
 
 # Other stuff
 .vscode
+
+# The outputdir for generatePasskeyProvidersMDS3JSON.js
+passkeyprovidersmds/*
